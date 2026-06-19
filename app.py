@@ -1,90 +1,231 @@
 import streamlit as st
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
 
-# 1. 페이지 설정 및 제목
-st.set_page_config(page_title="달달한 연애상담소", page_icon="💖")
-st.title("💖 달달한 연애상담소")
-st.caption("연애 고민, 썸, 이별 이야기까지 무엇이든 편하게 들려주세요.")
 
-# 2. Streamlit Secrets에서 API 키 불러오기 및 클라이언트 초기화
-# Streamlit Cloud에 배포할 때 지정할 secrets 키 이름을 사용합니다.
-if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
-else:
-    # 로컬 테스트용 환경변수 백업
-    import os
-    api_key = os.environ.get("GEMINI_API_KEY")
+# -------------------------
+# 페이지 설정
+# -------------------------
 
-if not api_key:
-    st.error("🔑 Gemini API Key가 설정되지 않았습니다. Streamlit Secrets 설정을 확인해주세요.")
-    st.stop()
+st.set_page_config(
+    page_title="시험 스트레스 분석기",
+    page_icon="📊",
+    layout="centered"
+)
 
-# 최신 google-genai 클라이언트 생성
-client = genai.Client(api_key=api_key)
 
-# 3. 세션 상태로 채팅 기록 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# -------------------------
+# 데이터
+# -------------------------
 
-# 4. 기존 대화 기록 화면에 표시
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+solutions = {
+    "공부량 부담": [
+        "공부 목표를 작은 단위로 나눠보세요.",
+        "오늘 해야 할 것 3개만 먼저 정해보세요."
+    ],
 
-# 5. 사용자 입력 받기
-if prompt := st.chat_input("고민을 말해보세요... (예: 썸녀 카톡 심리가 궁금해)"):
-    # 사용자 메시지 화면에 표시 및 세션 저장
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    "성적 걱정": [
+        "결과보다 현재 할 수 있는 행동에 집중해보세요.",
+        "틀리는 것은 공부 과정의 일부입니다."
+    ],
 
-    # 6. 챗봇 답변 생성 및 오류 처리
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        
-        try:
-            # 연애 상담사 페르소나 부여를 위한 시스템 지침 설정
-            system_instruction = (
-                "당신은 공감 능력이 뛰어나고 위트 있는 전문 연애 상담사입니다. "
-                "사용자의 고민에 깊이 공감해주고, 친구처럼 친근하면서도 현실적인 조언을 해주세요. "
-                "이모지를 적절히 섞어서 따뜻한 톤앤매너를 유지하세요."
+    "잠 부족": [
+        "잠들기 전 30분은 공부 대신 휴식 시간을 가져보세요.",
+        "수면 시간을 확보하면 집중력도 좋아집니다."
+    ],
+
+    "부모님/주변 기대": [
+        "혼자 고민하지 말고 마음을 이야기해보세요.",
+        "자신의 목표와 다른 사람의 기대를 구분해보세요."
+    ],
+
+    "시간 부족": [
+        "중요한 과목부터 우선순위를 정해보세요.",
+        "짧은 시간이라도 집중해서 시작해보세요."
+    ]
+}
+
+
+# -------------------------
+# 제목
+# -------------------------
+
+st.title("📊 시험 스트레스 원인 분석기")
+
+st.write(
+    "시험기간 현재 스트레스 점수를 확인하고 "
+    "스트레스를 만드는 원인을 찾아보세요."
+)
+
+
+st.divider()
+
+
+# -------------------------
+# 점수 입력
+# -------------------------
+
+st.subheader("1️⃣ 시험 스트레스 점수 측정")
+
+
+study = st.slider(
+    "공부량 때문에 부담을 느끼나요?",
+    0, 10, 5
+)
+
+grade = st.slider(
+    "성적이나 시험 결과가 걱정되나요?",
+    0, 10, 5
+)
+
+sleep = st.slider(
+    "잠이 부족하거나 피곤한가요?",
+    0, 10, 5
+)
+
+pressure = st.slider(
+    "주변 기대 때문에 압박을 느끼나요?",
+    0, 10, 5
+)
+
+time = st.slider(
+    "시간이 부족하다고 느끼나요?",
+    0, 10, 5
+)
+
+
+# -------------------------
+# 원인 선택
+# -------------------------
+
+st.subheader("2️⃣ 가장 큰 스트레스 원인 선택")
+
+reasons = st.multiselect(
+    "해당되는 것을 모두 선택하세요",
+    list(solutions.keys())
+)
+
+
+# -------------------------
+# 분석 버튼
+# -------------------------
+
+if st.button("📈 내 스트레스 분석하기"):
+
+    try:
+
+        score = int(
+            (
+                study
+                + grade
+                + sleep
+                + pressure
+                + time
             )
-            
-            # 대화 맥락 유지를 위해 이전 기록을 Gemini 형식으로 변환
-            # (단, 가볍고 빠른 상담을 위해 최신 대화 위주로 구성하는 것이 좋습니다)
-            contents = []
-            for m in st.session_state.messages:
-                # google-genai SDK는 user와 model 역할을 사용합니다.
-                role = "user" if m["role"] == "user" else "model"
-                contents.append(types.Content(
-                    role=role,
-                    parts=[types.Part.from_text(text=m["content"])]
-                ))
-            
-            # API 호출 (gemini-2.5-flash-lite 모델 사용)
-            response = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.7,
-                )
+            / 50
+            * 100
+        )
+
+
+        st.divider()
+
+        st.subheader("결과")
+
+
+        if score < 35:
+            st.success(
+                f"현재 스트레스 점수: {score}점\n\n"
+                "비교적 안정적인 상태입니다."
             )
-            
-            full_response = response.text
-            message_placeholder.markdown(full_response)
-            
-            # 어시스턴트 답변 세션 저장
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-        except APIError as e:
-            # Gemini API 관련 오류 처리
-            error_msg = f"❌ Gemini API 오류가 발생했습니다: {e.message}"
-            message_placeholder.markdown(error_msg)
-        except Exception as e:
-            # 기타 일반 오류 처리
-            error_msg = f"⚠️ 예상치 못한 오류가 발생했습니다: {str(e)}"
-            message_placeholder.markdown(error_msg)
+
+        elif score < 70:
+            st.warning(
+                f"현재 스트레스 점수: {score}점\n\n"
+                "스트레스 관리가 필요한 상태입니다."
+            )
+
+        else:
+            st.error(
+                f"현재 스트레스 점수: {score}점\n\n"
+                "휴식과 주변 도움을 함께 고려해보세요."
+            )
+
+
+        # 원인 분석
+
+        st.subheader("🔎 스트레스 원인 분석")
+
+
+        if reasons:
+
+            for r in reasons:
+                st.write("•", r)
+
+            main_reason = max(
+                reasons,
+                key=lambda x: len(solutions[x])
+            )
+
+            st.info(
+                "추천 집중 관리 원인: "
+                + main_reason
+            )
+
+
+            st.subheader("💡 추천 해결 방법")
+
+
+            for r in reasons:
+                for tip in solutions[r]:
+                    st.write("✅", tip)
+
+        else:
+            st.info(
+                "선택한 원인이 없습니다. "
+                "슬라이더 결과를 참고해보세요."
+            )
+
+
+    except Exception:
+
+        st.error(
+            "분석 중 오류가 발생했습니다. 다시 시도해주세요."
+        )
+
+
+# -------------------------
+# 기록장
+# -------------------------
+
+st.divider()
+
+st.subheader("📝 시험기간 마음 기록")
+
+memo = st.text_area(
+    "현재 고민이나 생각을 적어보세요",
+    placeholder="예) 수학 시험이 걱정된다..."
+)
+
+
+if st.button("기록 완료"):
+
+    if memo.strip():
+
+        st.success(
+            "기록되었습니다. 마음을 정리하는 데 도움이 될 수 있어요."
+        )
+
+    else:
+
+        st.warning(
+            "내용을 입력해주세요."
+        )
+
+
+# -------------------------
+
+st.divider()
+
+st.caption(
+    "이 앱은 자기 점검용 도구입니다. "
+    "스트레스가 너무 오래 지속되거나 일상생활이 힘들다면 "
+    "주변의 믿을 수 있는 사람에게 도움을 요청하세요."
+)
